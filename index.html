@@ -70,9 +70,15 @@
       font-size: 1em;
       font-weight: bold;
     }
-    #channelInfo { color: #FFD700; }
-    #speedTestResult { color: #1E90FF; }
-    #speedWarning { color: #FF6347; }
+    #channelInfo {
+      color: #FFD700;
+    }
+    #speedTestResult {
+      color: #1E90FF;
+    }
+    #speedWarning {
+      color: #FF6347;
+    }
     @media screen and (max-width: 768px) {
       h1 { font-size: 1.5em; }
       #controls { padding: 15px; }
@@ -89,11 +95,8 @@
   </div>
 
   <div id="controls">
-    <h3>📡 Sélectionnez une chaîne</h3>
+    <h3>Sélectionnez la chaîne</h3>
     <select id="channelSelect" onchange="changeChannel()"></select>
-    
-    <button onclick="reloadPlaylist()">🔄 Recharger les chaînes</button>
-
     <div id="speedTestResult">⏳ Test de vitesse en cours...</div>
     <div id="speedWarning"></div>
   </div>
@@ -123,7 +126,7 @@
     };
 
     async function runSpeedTest() {
-      const fileUrl = "https://download.thinkbroadband.com/1MB.zip";
+      const fileUrl = "https://download.thinkbroadband.com/5MB.zip";
       const startTime = performance.now();
       try {
         const response = await fetch(fileUrl, { cache: "no-store" });
@@ -132,9 +135,9 @@
         const duration = (endTime - startTime) / 1000;
         const bitsLoaded = blob.size * 8;
         userSpeedMbps = (bitsLoaded / duration / 1024 / 1024).toFixed(2);
-        speedTest.textContent = `🚀 Vitesse détectée : ${userSpeedMbps} Mbps`;
+        speedTest.textContent = `🚀 Vitesse estimée : ${userSpeedMbps} Mbps`;
       } catch (e) {
-        speedTest.textContent = "❌ Test de vitesse échoué";
+        speedTest.textContent = "❌ Échec du test de vitesse.";
         userSpeedMbps = null;
       }
     }
@@ -144,12 +147,6 @@
         .then(res => res.text())
         .then(parseM3U)
         .catch(err => alert("Erreur de chargement de la playlist : " + err));
-    }
-
-    function reloadPlaylist() {
-      document.getElementById('channelSelect').innerHTML = '';
-      document.getElementById('channelInfo').textContent = '';
-      loadDefaultPlaylist();
     }
 
     function parseM3U(m3u) {
@@ -175,7 +172,7 @@
       if (lower.includes("480")) return "480p";
       if (lower.includes("sd")) return "SD";
       if (lower.includes("hd")) return "HD";
-      return "Inconnu";
+      return "Unknown";
     }
 
     function updateChannelList() {
@@ -187,7 +184,6 @@
         option.textContent = `${ch.name} (${ch.quality})`;
         select.appendChild(option);
       });
-
       const lastIndex = localStorage.getItem("lastChannelIndex");
       if (lastIndex && channels[lastIndex]) {
         select.value = lastIndex;
@@ -203,14 +199,14 @@
       if (!channel) return;
 
       localStorage.setItem("lastChannelIndex", index);
-      document.getElementById('channelInfo').textContent = `🎬 ${channel.name} (${channel.quality})`;
+      document.getElementById('channelInfo').textContent = `🎬 Chaîne : ${channel.name} (${channel.quality})`;
 
       if (userSpeedMbps && qualitySpeeds[channel.quality]) {
         const needed = qualitySpeeds[channel.quality];
         if (userSpeedMbps < needed) {
-          speedWarning.textContent = `⚠️ Connexion insuffisante (Requis: ${needed} Mbps)`;
+          speedWarning.textContent = `⚠️ Connexion trop lente pour cette chaîne (Besoin : ${needed} Mbps)`;
         } else {
-          speedWarning.textContent = `✅ Connexion OK`;
+          speedWarning.textContent = `✅ Connexion suffisante pour cette chaîne`;
         }
       } else {
         speedWarning.textContent = '';
@@ -226,7 +222,7 @@
         video.src = channel.url;
         video.addEventListener('loadedmetadata', () => video.play());
       } else {
-        alert("Ce navigateur ne supporte pas HLS.");
+        alert("HLS non pris en charge.");
       }
     }
   </script>
