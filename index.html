@@ -164,36 +164,34 @@
       progressContainer.style.display = "block";
       speedProgress.style.width = "0%";
 
-      // Simple 5MB test file
       const testFile = {
-        url: "https://proof.ovh.net/files/5Mb.dat",
-        size: 5 * 1024 * 1024 // 5MB in bytes
+        url: "https://speed.hetzner.de/5MB.bin",
+        size: 5 * 1024 * 1024
       };
 
       abortController = new AbortController();
-      
+
       try {
         const startTime = performance.now();
         const response = await fetch(testFile.url, {
           cache: "no-store",
           signal: abortController.signal,
-          mode: 'no-cors'
+          mode: 'cors'
         });
 
         if (!response.ok) throw new Error("Server response not OK");
 
         const reader = response.body.getReader();
         let received = 0;
-        
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          
+
           received += value.length;
           const progress = Math.min(100, (received / testFile.size) * 100);
           speedProgress.style.width = `${progress}%`;
-          
-          // Calculate current speed in Mbps
+
           const currentTime = performance.now();
           const elapsedSeconds = (currentTime - startTime) / 1000;
           if (elapsedSeconds > 0) {
@@ -205,9 +203,9 @@
         const endTime = performance.now();
         const durationSeconds = (endTime - startTime) / 1000;
         userSpeedMbps = (testFile.size * 8) / (durationSeconds * 1000000);
-        
+
         speedTest.textContent = `🚀 Vitesse finale: ${userSpeedMbps.toFixed(2)} Mbps`;
-        
+
       } catch (error) {
         if (error.name === 'AbortError') {
           speedTest.textContent = "Test annulé";
@@ -215,25 +213,6 @@
           console.error("Speed test error:", error);
           speedTest.textContent = "❌ Échec du test de vitesse";
           userSpeedMbps = 0;
-          
-          // Fallback method using small image download
-          try {
-            speedTest.textContent = "⏳ Essai méthode alternative...";
-            const imgStart = performance.now();
-            const img = await fetch("https://source.unsplash.com/random/100x100?" + Date.now(), {
-              cache: "no-store",
-              mode: 'no-cors'
-            });
-            const blob = await img.blob();
-            const imgEnd = performance.now();
-            
-            const imgDuration = (imgEnd - imgStart) / 1000;
-            userSpeedMbps = (blob.size * 8) / (imgDuration * 1000000);
-            speedTest.textContent = `🚀 Vitesse: ${userSpeedMbps.toFixed(2)} Mbps (méthode rapide)`;
-          } catch (fallbackError) {
-            console.error("Fallback method failed:", fallbackError);
-            speedTest.textContent = "❌ Impossible de mesurer la vitesse";
-          }
         }
       } finally {
         speedTestInProgress = false;
@@ -311,7 +290,6 @@
 
       updateChannelQualityWarning(channel);
 
-      // Load video
       if (hls) hls.destroy();
       if (Hls.isSupported()) {
         hls = new Hls();
@@ -350,3 +328,4 @@
   </script>
 </body>
 </html>
+
