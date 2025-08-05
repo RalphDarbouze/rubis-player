@@ -112,11 +112,11 @@
   <div id="controls">
     <h3>Sélectionnez la chaîne</h3>
     <select id="channelSelect" onchange="changeChannel()"></select>
-    <button onclick="runSpeedTest()">🔁 Tester la vitesse Internet</button>
+    <button onclick="runSpeedTest()">🔁 Tester la vitesse Internet (Mbps)</button>
     <div class="progress-container" id="progressContainer">
       <div id="speedProgress"></div>
     </div>
-    <div id="speedTestResult">Prêt à tester votre vitesse Internet</div>
+    <div id="speedTestResult">Cliquez pour tester votre vitesse en Mbps</div>
     <div id="speedWarning"></div>
   </div>
 
@@ -164,111 +164,83 @@
       progressContainer.style.display = "block";
       speedProgress.style.width = "0%";
 
-      // Multiple test sources with different sizes
-      const testFiles = [
-        {
-          url: "https://proof.ovh.net/files/10Mb.dat", // 10MB
-          size: 10 * 1024 * 1024
-        },
-        {
-          url: "https://speedtest.ftp.otenet.gr/files/test10Mb.db", // 10MB
-          size: 10 * 1024 * 1024
-        },
-        {
-          url: "https://download.microsoft.com/download/8/7/5/875B7A4D-2345-4D1A-8B9E-1D38B6F26950/ENU/x64/Latest/MSSTSC.EXE", // ~1MB
-          size: 1024 * 1024
-        }
-      ];
+      // Simple 5MB test file
+      const testFile = {
+        url: "https://proof.ovh.net/files/5Mb.dat",
+        size: 5 * 1024 * 1024 // 5MB in bytes
+      };
 
-      let testSuccessful = false;
+      abortController = new AbortController();
       
-      for (const file of testFiles) {
-        abortController = new AbortController();
+      try {
+        const startTime = performance.now();
+        const response = await fetch(testFile.url, {
+          cache: "no-store",
+          signal: abortController.signal,
+          mode: 'no-cors'
+        });
+
+        if (!response.ok) throw new Error("Server response not OK");
+
+        const reader = response.body.getReader();
+        let received = 0;
         
-        try {
-          const startTime = performance.now();
-          const response = await fetch(file.url, {
-            cache: "no-store",
-            signal: abortController.signal,
-            mode: 'no-cors'
-          });
-
-          if (!response.ok) {
-            console.log("Response not OK, trying next server");
-            continue;
-          }
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
           
-          const reader = response.body.getReader();
-          let received = 0;
-          const chunks = [];
+          received += value.length;
+          const progress = Math.min(100, (received / testFile.size) * 100);
+          speedProgress.style.width = `${progress}%`;
           
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            chunks.push(value);
-            received += value.length;
-            const progress = Math.min(100, (received / file.size) * 100);
-            speedProgress.style.width = `${progress}%`;
-            
-            // Calculate current speed
-            const currentTime = performance.now();
-            const elapsedSeconds = (currentTime - startTime) / 1000;
-            if (elapsedSeconds > 0) {
-              const currentSpeed = (received * 8) / (elapsedSeconds * 1000000); // Mbps
-              speedTest.textContent = `🚀 Vitesse actuelle: ${currentSpeed.toFixed(2)} Mbps`;
-            }
-          }
-
-          const endTime = performance.now();
-          const durationSeconds = (endTime - startTime) / 1000;
-          userSpeedMbps = (received * 8) / (durationSeconds * 1000000);
-          
-          speedTest.textContent = `🚀 Vitesse: ${userSpeedMbps.toFixed(2)} Mbps`;
-          testSuccessful = true;
-          break;
-          
-        } catch (error) {
-          if (error.name === 'AbortError') {
-            speedTest.textContent = "Test annulé";
-            break;
-          }
-          console.log(`Test failed with ${file.url}, trying next...`, error);
-          continue;
-        } finally {
-          if (abortController) {
-            abortController = null;
+          // Calculate current speed in Mbps
+          const currentTime = performance.now();
+          const elapsedSeconds = (currentTime - startTime) / 1000;
+          if (elapsedSeconds > 0) {
+            userSpeedMbps = (received * 8) / (elapsedSeconds * 1000000);
+            speedTest.textContent = `🚀 Vitesse: ${userSpeedMbps.toFixed(2)} Mbps`;
           }
         }
-      }
 
-      if (!testSuccessful) {
-        // Fallback method using image download
-        try {
-          speedTest.textContent = "⏳ Essai méthode alternative...";
-          const startTime = performance.now();
-          const imgUrl = "https://source.unsplash.com/random/3000x2000?" + Date.now();
-          const response = await fetch(imgUrl, { cache: "no-store", mode: 'no-cors' });
-          const blob = await response.blob();
-          const endTime = performance.now();
+        const endTime = performance.now();
+        const durationSeconds = (endTime - startTime) / 1000;
+        userSpeedMbps = (testFile.size * 8) / (durationSeconds * 1000000);
+        
+        speedTest.textContent = `🚀 Vitesse finale: ${userSpeedMbps.toFixed(2)} Mbps`;
+        
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          speedTest.textContent = "Test annulé";
+        } else {
+          console.error("Speed test error:", error);
+          speedTest.textContent = "❌ Échec du test de vitesse";
+          userSpeedMbps = 0;
           
-          const durationSeconds = (endTime - startTime) / 1000;
-          userSpeedMbps = (blob.size * 8) / (durationSeconds * 1000000);
-          speedTest.textContent = `🚀 Vitesse: ${userSpeedMbps.toFixed(2)} Mbps (méthode alternative)`;
-          testSuccessful = true;
-        } catch (error) {
-          console.log("Alternative method also failed", error);
+          // Fallback method using small image download
+          try {
+            speedTest.textContent = "⏳ Essai méthode alternative...";
+            const imgStart = performance.now();
+            const img = await fetch("https://source.unsplash.com/random/100x100?" + Date.now(), {
+              cache: "no-store",
+              mode: 'no-cors'
+            });
+            const blob = await img.blob();
+            const imgEnd = performance.now();
+            
+            const imgDuration = (imgEnd - imgStart) / 1000;
+            userSpeedMbps = (blob.size * 8) / (imgDuration * 1000000);
+            speedTest.textContent = `🚀 Vitesse: ${userSpeedMbps.toFixed(2)} Mbps (méthode rapide)`;
+          } catch (fallbackError) {
+            console.error("Fallback method failed:", fallbackError);
+            speedTest.textContent = "❌ Impossible de mesurer la vitesse";
+          }
         }
+      } finally {
+        speedTestInProgress = false;
+        progressContainer.style.display = "none";
+        abortController = null;
+        updateChannelQualityWarning();
       }
-
-      if (!testSuccessful) {
-        speedTest.textContent = "❌ Échec du test de vitesse";
-        userSpeedMbps = 0;
-      }
-
-      speedTestInProgress = false;
-      progressContainer.style.display = "none";
-      updateChannelQualityWarning();
     }
 
     function loadDefaultPlaylist() {
@@ -364,14 +336,14 @@
       const needed = qualitySpeeds[channel.quality];
       if (userSpeedMbps && needed) {
         if (userSpeedMbps < needed) {
-          speedWarning.textContent = `⚠️ Connexion trop lente pour cette chaîne (Besoin: ${needed} Mbps, Vous avez: ${userSpeedMbps.toFixed(2)} Mbps)`;
+          speedWarning.textContent = `⚠️ Connexion trop lente (Besoin: ${needed} Mbps)`;
           speedWarning.style.color = "#FF6347";
         } else {
-          speedWarning.textContent = `✅ Connexion suffisante pour cette chaîne (Besoin: ${needed} Mbps, Vous avez: ${userSpeedMbps.toFixed(2)} Mbps)`;
+          speedWarning.textContent = `✅ Connexion suffisante (Besoin: ${needed} Mbps)`;
           speedWarning.style.color = "#4CAF50";
         }
       } else {
-        speedWarning.textContent = `ℹ️ Qualité inconnue ou pas de donnée de vitesse`;
+        speedWarning.textContent = `ℹ️ Qualité inconnue`;
         speedWarning.style.color = "#FFD700";
       }
     }
