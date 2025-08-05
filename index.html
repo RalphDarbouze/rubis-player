@@ -70,9 +70,15 @@
       font-size: 1em;
       font-weight: bold;
     }
-    #channelInfo { color: #FFD700; }
-    #speedTestResult { color: #1E90FF; }
-    #speedWarning { color: #FF6347; }
+    #channelInfo {
+      color: #FFD700;
+    }
+    #speedTestResult {
+      color: #1E90FF;
+    }
+    #speedWarning {
+      color: #FF6347;
+    }
     @media screen and (max-width: 768px) {
       h1 { font-size: 1.5em; }
       #controls { padding: 15px; }
@@ -104,9 +110,8 @@
     let hls, channels = [], userSpeedMbps = 0;
 
     const qualitySpeeds = {
-      "240p": 0.4,
-      "280p": 0.6,
-      "360p": 1,
+      "280p": 0.3,
+      "360p": 0.7,
       "SD": 1.5,
       "480p": 2,
       "540p": 3,
@@ -118,33 +123,39 @@
     };
 
     window.onload = () => {
-      runSpeedTest(); // initial test
       loadDefaultPlaylist();
-      setInterval(runSpeedTest, 3000); // repeat every 3 seconds
+      runSpeedTest();
+      setInterval(runSpeedTest, 3000); // refresh every 3s
     };
 
     async function runSpeedTest() {
       const fileUrl = "https://download.thinkbroadband.com/1MB.zip";
       const startTime = performance.now();
+
       try {
         const response = await fetch(fileUrl, { cache: "no-store" });
         const blob = await response.blob();
         const endTime = performance.now();
-        const duration = (endTime - startTime) / 1000;
 
-        if (!isFinite(duration) || duration <= 0 || isNaN(duration)) throw new Error("Durée invalide");
+        const duration = (endTime - startTime) / 1000;
+        if (!isFinite(duration) || duration <= 0 || isNaN(duration)) throw new Error("Invalid time");
 
         const bitsLoaded = blob.size * 8;
-        const rawSpeed = bitsLoaded / duration / 1024 / 1024;
+        const speedBps = bitsLoaded / duration;
+        const speedKbps = speedBps / 1024;
+        userSpeedMbps = speedBps / 1024 / 1024;
 
-        userSpeedMbps = isFinite(rawSpeed) ? parseFloat(rawSpeed.toFixed(2)) : 0;
-        speedTest.textContent = `🚀 Vitesse : ${userSpeedMbps} Mbps`;
+        if (userSpeedMbps >= 1) {
+          speedTest.textContent = `🚀 Vitesse : ${userSpeedMbps.toFixed(2)} Mbps`;
+        } else {
+          speedTest.textContent = `🚀 Vitesse : ${Math.round(speedKbps)} Kbps`;
+        }
 
-        updateChannelQualityWarning(); // refresh quality match
+        updateChannelQualityWarning();
+
       } catch (e) {
         userSpeedMbps = 0;
-        speedTest.textContent = `🚀 Vitesse : 0.00 Mbps`;
-        console.warn("⚠️ Vitesse extrêmement basse ou erreur :", e.message);
+        speedTest.textContent = `🚀 Vitesse : 0 Kbps`;
         updateChannelQualityWarning();
       }
     }
@@ -174,13 +185,11 @@
       const lower = name.toLowerCase();
       if (lower.includes("4k")) return "4K";
       if (lower.includes("1080")) return "1080p";
-      if (lower.includes("full hd")) return "Full HD";
       if (lower.includes("720")) return "720p";
       if (lower.includes("540")) return "540p";
       if (lower.includes("480")) return "480p";
       if (lower.includes("360")) return "360p";
       if (lower.includes("280")) return "280p";
-      if (lower.includes("240")) return "240p";
       if (lower.includes("sd")) return "SD";
       if (lower.includes("hd")) return "HD";
       return "Unknown";
@@ -192,7 +201,7 @@
       channels.forEach((ch, i) => {
         const option = document.createElement('option');
         option.value = i;
-        option.textContent = `${ch.name} (${ch.quality})`;
+        option.textContent = `${ch.name} (${ch.quality || 'Qualité inconnue'})`;
         select.appendChild(option);
       });
 
@@ -211,10 +220,12 @@
       if (!channel) return;
 
       localStorage.setItem("lastChannelIndex", index);
-      document.getElementById('channelInfo').textContent = `🎬 Chaîne : ${channel.name} (${channel.quality})`;
+      document.getElementById('channelInfo').textContent = `🎬 Chaîne : ${channel.name} (${channel.quality || 'Qualité inconnue'})`;
 
+      updateChannelQualityWarning(channel);
+
+      // Load video
       if (hls) hls.destroy();
-
       if (Hls.isSupported()) {
         hls = new Hls();
         hls.loadSource(channel.url);
@@ -226,28 +237,26 @@
       } else {
         alert("HLS non pris en charge.");
       }
-
-      updateChannelQualityWarning();
     }
 
-    function updateChannelQualityWarning() {
-      const index = document.getElementById('channelSelect').value;
-      const channel = channels[index];
-      if (!channel || !channel.quality || channel.quality === "Unknown") {
-        speedWarning.textContent = "ℹ️ Qualité inconnue";
-        return;
+    function updateChannelQualityWarning(channel = null) {
+      if (!channel) {
+        const index = document.getElementById('channelSelect').value;
+        channel = channels[index];
       }
+      if (!channel) return;
 
       const needed = qualitySpeeds[channel.quality];
-      if (!needed) {
-        speedWarning.textContent = "ℹ️ Qualité inconnue";
-      } else if (userSpeedMbps < needed) {
-        speedWarning.textContent = `⚠️ Trop lent pour cette qualité (${channel.quality}). Requis : ${needed} Mbps`;
+      if (userSpeedMbps && needed) {
+        if (userSpeedMbps < needed) {
+          speedWarning.textContent = `⚠️ Connexion trop lente pour cette chaîne (Besoin: ${needed} Mbps)`;
+        } else {
+          speedWarning.textContent = `✅ Connexion suffisante pour cette chaîne`;
+        }
       } else {
-        speedWarning.textContent = `✅ Connexion suffisante pour ${channel.quality}`;
+        speedWarning.textContent = `ℹ️ Qualité inconnue ou pas de donnée de vitesse`;
       }
     }
   </script>
 </body>
 </html>
-
