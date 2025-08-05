@@ -79,6 +79,21 @@
     #speedWarning {
       color: #FF6347;
     }
+    .progress-container {
+      width: 100%;
+      max-width: 600px;
+      background-color: #333;
+      border-radius: 5px;
+      margin: 10px auto;
+      display: none;
+    }
+    #speedProgress {
+      height: 20px;
+      border-radius: 5px;
+      background-color: #4CAF50;
+      width: 0%;
+      transition: width 0.3s;
+    }
     @media screen and (max-width: 768px) {
       h1 { font-size: 1.5em; }
       #controls { padding: 15px; }
@@ -97,6 +112,10 @@
   <div id="controls">
     <h3>Sélectionnez la chaîne</h3>
     <select id="channelSelect" onchange="changeChannel()"></select>
+    <button onclick="runSpeedTest()">🔁 Tester à nouveau la vitesse</button>
+    <div class="progress-container" id="progressContainer">
+      <div id="speedProgress"></div>
+    </div>
     <div id="speedTestResult">⏳ Test de vitesse en cours...</div>
     <div id="speedWarning"></div>
   </div>
@@ -105,9 +124,13 @@
     const video = document.getElementById('video');
     const speedTest = document.getElementById('speedTestResult');
     const speedWarning = document.getElementById('speedWarning');
+    const progressContainer = document.getElementById('progressContainer');
+    const speedProgress = document.getElementById('speedProgress');
     const DEFAULT_M3U_URL = "https://gist.githubusercontent.com/RalphDarbouze/7fc242ebfecbba4f6854becb8b8abc94/raw/ea72074575541484197cddb7d5aa60a78005fba4/my_first_iptv.m3u";
 
     let hls, channels = [], userSpeedMbps = 0;
+    let speedTestInProgress = false;
+    let testStartTime, testSize = 0;
 
     const qualitySpeeds = {
       "280p": 0.3,
@@ -125,38 +148,81 @@
     window.onload = () => {
       loadDefaultPlaylist();
       runSpeedTest();
-      setInterval(runSpeedTest, 3000); // refresh every 3s
     };
 
     async function runSpeedTest() {
-      const fileUrl = "https://download.thinkbroadband.com/1MB.zip";
-      const startTime = performance.now();
-
+      if (speedTestInProgress) return;
+      
+      speedTestInProgress = true;
+      speedTest.textContent = "⏳ Test de vitesse en cours...";
+      speedWarning.textContent = "";
+      progressContainer.style.display = "block";
+      speedProgress.style.width = "0%";
+      
+      // Use multiple test files of different sizes for more accurate results
+      const testFiles = [
+        { url: "https://download.thinkbroadband.com/1MB.zip", size: 1 * 1024 * 1024 },
+        { url: "https://download.thinkbroadband.com/5MB.zip", size: 5 * 1024 * 1024 }
+      ];
+      
+      let totalBits = 0;
+      let totalTime = 0;
+      
       try {
-        const response = await fetch(fileUrl, { cache: "no-store" });
-        const blob = await response.blob();
-        const endTime = performance.now();
-
-        const duration = (endTime - startTime) / 1000;
-        if (!isFinite(duration) || duration <= 0 || isNaN(duration)) throw new Error("Invalid time");
-
-        const bitsLoaded = blob.size * 8;
-        const speedBps = bitsLoaded / duration;
-        const speedKbps = speedBps / 1024;
-        userSpeedMbps = speedBps / 1024 / 1024;
-
-        if (userSpeedMbps >= 1) {
-          speedTest.textContent = `🚀 Vitesse : ${userSpeedMbps.toFixed(2)} Mbps`;
-        } else {
-          speedTest.textContent = `🚀 Vitesse : ${Math.round(speedKbps)} Kbps`;
+        for (const file of testFiles) {
+          testStartTime = performance.now();
+          testSize = file.size;
+          
+          const response = await fetch(file.url, { cache: "no-store" });
+          const reader = response.body.getReader();
+          let receivedLength = 0;
+          const chunks = [];
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            chunks.push(value);
+            receivedLength += value.length;
+            
+            // Update progress
+            const progress = Math.min(100, (receivedLength / file.size) * 100);
+            speedProgress.style.width = `${progress}%`;
+            
+            // Calculate partial speed
+            const currentTime = performance.now();
+            const elapsedTime = (currentTime - testStartTime) / 1000;
+            if (elapsedTime > 0) {
+              const currentSpeed = (receivedLength * 8) / (elapsedTime * 1024 * 1024);
+              speedTest.textContent = `🚀 Vitesse actuelle : ${currentSpeed.toFixed(2)} Mbps`;
+            }
+          }
+          
+          const endTime = performance.now();
+          const duration = (endTime - testStartTime) / 1000;
+          
+          totalBits += file.size * 8;
+          totalTime += duration;
         }
-
+        
+        // Calculate average speed
+        userSpeedMbps = totalBits / (totalTime * 1024 * 1024);
+        
+        if (userSpeedMbps >= 1) {
+          speedTest.textContent = `🚀 Vitesse moyenne : ${userSpeedMbps.toFixed(2)} Mbps`;
+        } else {
+          speedTest.textContent = `🚀 Vitesse moyenne : ${(userSpeedMbps * 1024).toFixed(2)} Kbps`;
+        }
+        
         updateChannelQualityWarning();
-
+        
       } catch (e) {
+        console.error("Speed test error:", e);
         userSpeedMbps = 0;
-        speedTest.textContent = `🚀 Vitesse : 0 Kbps`;
-        updateChannelQualityWarning();
+        speedTest.textContent = "❌ Échec du test de vitesse";
+      } finally {
+        speedTestInProgress = false;
+        progressContainer.style.display = "none";
       }
     }
 
@@ -249,12 +315,15 @@
       const needed = qualitySpeeds[channel.quality];
       if (userSpeedMbps && needed) {
         if (userSpeedMbps < needed) {
-          speedWarning.textContent = `⚠️ Connexion trop lente pour cette chaîne (Besoin: ${needed} Mbps)`;
+          speedWarning.textContent = `⚠️ Connexion trop lente pour cette chaîne (Besoin: ${needed} Mbps, Vous avez: ${userSpeedMbps.toFixed(2)} Mbps)`;
+          speedWarning.style.color = "#FF6347";
         } else {
-          speedWarning.textContent = `✅ Connexion suffisante pour cette chaîne`;
+          speedWarning.textContent = `✅ Connexion suffisante pour cette chaîne (Besoin: ${needed} Mbps, Vous avez: ${userSpeedMbps.toFixed(2)} Mbps)`;
+          speedWarning.style.color = "#4CAF50";
         }
       } else {
         speedWarning.textContent = `ℹ️ Qualité inconnue ou pas de donnée de vitesse`;
+        speedWarning.style.color = "#FFD700";
       }
     }
   </script>
