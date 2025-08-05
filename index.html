@@ -73,12 +73,6 @@
     #channelInfo {
       color: #FFD700;
     }
-    #speedTestResult {
-      color: #1E90FF;
-    }
-    #speedWarning {
-      color: #FF6347;
-    }
     @media screen and (max-width: 768px) {
       h1 { font-size: 1.5em; }
       #controls { padding: 15px; }
@@ -107,9 +101,12 @@
     const speedWarning = document.getElementById('speedWarning');
     const DEFAULT_M3U_URL = "https://gist.githubusercontent.com/RalphDarbouze/7fc242ebfecbba4f6854becb8b8abc94/raw/ea72074575541484197cddb7d5aa60a78005fba4/my_first_iptv.m3u";
 
-    let hls, channels = [], userSpeedMbps = null;
+    let hls, channels = [], userSpeedMbps = null, currentChannel = null;
 
     const qualitySpeeds = {
+      "240p": 0.5,
+      "280p": 0.8,
+      "360p": 1.2,
       "SD": 1.5,
       "480p": 2,
       "540p": 3,
@@ -121,12 +118,13 @@
     };
 
     window.onload = () => {
-      runSpeedTest();
       loadDefaultPlaylist();
+      runSpeedTest(); // Initial test
+      setInterval(runSpeedTest, 3000); // Test every 3 sec
     };
 
     async function runSpeedTest() {
-      const fileUrl = "https://download.thinkbroadband.com/1MB.zip";
+      const fileUrl = "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg"; // ~1MB
       const startTime = performance.now();
       try {
         const response = await fetch(fileUrl, { cache: "no-store" });
@@ -135,10 +133,35 @@
         const duration = (endTime - startTime) / 1000;
         const bitsLoaded = blob.size * 8;
         userSpeedMbps = (bitsLoaded / duration / 1024 / 1024).toFixed(2);
-        speedTest.textContent = `🚀 Vitesse : ${userSpeedMbps} Mbps`;
+        updateSpeedUI();
       } catch (e) {
-        speedTest.textContent = "❌ Échec du test de vitesse";
         userSpeedMbps = null;
+        speedTest.textContent = "❌ Échec du test de vitesse";
+        speedTest.style.color = "#FF6347";
+        speedWarning.textContent = '';
+      }
+    }
+
+    function updateSpeedUI() {
+      const speed = parseFloat(userSpeedMbps);
+      speedTest.textContent = `🚀 Vitesse : ${speed} Mbps`;
+
+      if (!currentChannel || !qualitySpeeds[currentChannel.quality]) {
+        speedWarning.textContent = 'ℹ️ Qualité inconnue';
+        speedTest.style.color = '#FFD700';
+        return;
+      }
+
+      const required = qualitySpeeds[currentChannel.quality];
+      if (speed >= required) {
+        speedWarning.textContent = `✅ Connexion suffisante pour ${currentChannel.quality}`;
+        speedTest.style.color = '#4CAF50';
+      } else if (speed >= required * 0.8) {
+        speedWarning.textContent = `⚠️ Connexion limite pour ${currentChannel.quality} (Besoin: ${required} Mbps)`;
+        speedTest.style.color = '#FFD700';
+      } else {
+        speedWarning.textContent = `🔴 Trop lent pour ${currentChannel.quality} (Besoin: ${required} Mbps)`;
+        speedTest.style.color = '#FF6347';
       }
     }
 
@@ -167,9 +190,13 @@
       const lower = name.toLowerCase();
       if (lower.includes("4k")) return "4K";
       if (lower.includes("1080")) return "1080p";
+      if (lower.includes("full hd")) return "Full HD";
       if (lower.includes("720")) return "720p";
       if (lower.includes("540")) return "540p";
       if (lower.includes("480")) return "480p";
+      if (lower.includes("360")) return "360p";
+      if (lower.includes("280")) return "280p";
+      if (lower.includes("240")) return "240p";
       if (lower.includes("sd")) return "SD";
       if (lower.includes("hd")) return "HD";
       return "Unknown";
@@ -198,22 +225,12 @@
       const channel = channels[index];
       if (!channel) return;
 
+      currentChannel = channel;
       localStorage.setItem("lastChannelIndex", index);
       document.getElementById('channelInfo').textContent = `🎬 Chaîne : ${channel.name} (${channel.quality})`;
 
-      // Speed check based on quality
-      if (userSpeedMbps && qualitySpeeds[channel.quality]) {
-        const needed = qualitySpeeds[channel.quality];
-        if (userSpeedMbps < needed) {
-          speedWarning.textContent = `⚠️ Connexion trop lente pour cette chaîne (Besoin: ${needed} Mbps)`;
-        } else {
-          speedWarning.textContent = `✅ Connexion suffisante pour cette chaîne`;
-        }
-      } else {
-        speedWarning.textContent = '';
-      }
+      updateSpeedUI();
 
-      // Load video
       if (hls) hls.destroy();
       if (Hls.isSupported()) {
         hls = new Hls();
