@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>RUBIS TV PLAYER</title>
+  <title>📺 RUBIS TV PLAYER</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
@@ -43,8 +43,9 @@
       width: 100%;
       max-width: 1000px;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+      margin-bottom: 20px;
     }
-    select, input[type="text"], input[type="file"], button {
+    select, button {
       width: 100%;
       max-width: 600px;
       margin: 10px auto;
@@ -63,19 +64,24 @@
     button:hover {
       background-color: #45a049;
     }
-    #channelInfo {
-      margin: 10px auto;
+    #channelInfo, #speedTestResult, #speedWarning {
+      margin-top: 10px;
       text-align: center;
-      font-size: 1.2em;
+      font-size: 1em;
       font-weight: bold;
+    }
+    #channelInfo {
       color: #FFD700;
+    }
+    #speedTestResult {
+      color: #1E90FF;
+    }
+    #speedWarning {
+      color: #FF6347;
     }
     @media screen and (max-width: 768px) {
       h1 { font-size: 1.5em; }
       #controls { padding: 15px; }
-    }
-    @media screen and (min-width: 1200px) {
-      #video-container { max-width: 90%; }
     }
   </style>
 </head>
@@ -91,74 +97,91 @@
   <div id="controls">
     <h3>Sélectionnez la chaîne</h3>
     <select id="channelSelect" onchange="changeChannel()"></select>
-
-    <h3 style="margin-top: 30px;">Chaîne Personnalisée </h3>
-    <input type="text" id="m3uUrl" placeholder="Ne pas utiliser">
-    <button onclick="loadM3UFromUrl()">Load from URL</button>
-    <input type="file" id="m3uFile" accept=".m3u,.m3u8">
-
-    <button onclick="openFullscreenTab()">🔳 Mode Plein Écran</button>
+    <div id="speedTestResult">⏳ Test de vitesse en cours...</div>
+    <div id="speedWarning"></div>
   </div>
 
   <script>
     const video = document.getElementById('video');
-    let hls;
-    let channels = [];
+    const speedTest = document.getElementById('speedTestResult');
+    const speedWarning = document.getElementById('speedWarning');
     const DEFAULT_M3U_URL = "https://gist.githubusercontent.com/RalphDarbouze/7fc242ebfecbba4f6854becb8b8abc94/raw/ea72074575541484197cddb7d5aa60a78005fba4/my_first_iptv.m3u";
 
-    window.onload = function () {
+    let hls, channels = [], userSpeedMbps = null;
+
+    const qualitySpeeds = {
+      "SD": 1.5,
+      "480p": 2,
+      "540p": 3,
+      "HD": 5,
+      "720p": 5,
+      "1080p": 8,
+      "Full HD": 8,
+      "4K": 20
+    };
+
+    window.onload = () => {
+      runSpeedTest();
       loadDefaultPlaylist();
     };
 
+    async function runSpeedTest() {
+      const fileUrl = "https://download.thinkbroadband.com/1MB.zip";
+      const startTime = performance.now();
+      try {
+        const response = await fetch(fileUrl, { cache: "no-store" });
+        const blob = await response.blob();
+        const endTime = performance.now();
+        const duration = (endTime - startTime) / 1000;
+        const bitsLoaded = blob.size * 8;
+        userSpeedMbps = (bitsLoaded / duration / 1024 / 1024).toFixed(2);
+        speedTest.textContent = `🚀 Vitesse : ${userSpeedMbps} Mbps`;
+      } catch (e) {
+        speedTest.textContent = "❌ Échec du test de vitesse";
+        userSpeedMbps = null;
+      }
+    }
+
     function loadDefaultPlaylist() {
       fetch(DEFAULT_M3U_URL)
-        .then(response => response.text())
+        .then(res => res.text())
         .then(parseM3U)
-        .catch(err => alert("Error loading default playlist: " + err));
+        .catch(err => alert("Erreur de chargement de la playlist : " + err));
     }
 
-    function loadM3UFromUrl() {
-      const m3uUrl = document.getElementById('m3uUrl').value;
-      if (!m3uUrl) return alert("Ne pas utiliser.");
-      fetch(m3uUrl)
-        .then(response => response.text())
-        .then(parseM3U)
-        .catch(err => alert("Error loading M3U: " + err));
-    }
-
-    document.getElementById('m3uFile').addEventListener('change', function (e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function (e) {
-        parseM3U(e.target.result);
-      };
-      reader.readAsText(file);
-    });
-
-    function parseM3U(m3uContent) {
+    function parseM3U(m3u) {
       channels = [];
-      const lines = m3uContent.split('\n');
+      const lines = m3u.split('\n');
       for (let i = 0; i < lines.length; i++) {
         if (lines[i].startsWith('#EXTINF:')) {
-          const channelName = lines[i].split(',')[1]?.trim() || `Channel ${channels.length + 1}`;
-          const channelUrl = lines[i + 1]?.trim();
-          if (channelUrl) {
-            channels.push({ name: channelName, url: channelUrl });
-          }
+          const name = lines[i].split(',')[1]?.trim() || `Chaîne ${channels.length + 1}`;
+          const url = lines[i + 1]?.trim();
+          const quality = detectQuality(name);
+          if (url) channels.push({ name, url, quality });
         }
       }
-      if (channels.length === 0) return alert("No channels found in M3U.");
       updateChannelList();
+    }
+
+    function detectQuality(name) {
+      const lower = name.toLowerCase();
+      if (lower.includes("4k")) return "4K";
+      if (lower.includes("1080")) return "1080p";
+      if (lower.includes("720")) return "720p";
+      if (lower.includes("540")) return "540p";
+      if (lower.includes("480")) return "480p";
+      if (lower.includes("sd")) return "SD";
+      if (lower.includes("hd")) return "HD";
+      return "Unknown";
     }
 
     function updateChannelList() {
       const select = document.getElementById('channelSelect');
       select.innerHTML = '';
-      channels.forEach((channel, index) => {
+      channels.forEach((ch, i) => {
         const option = document.createElement('option');
-        option.value = index;
-        option.textContent = channel.name;
+        option.value = i;
+        option.textContent = `${ch.name} (${ch.quality})`;
         select.appendChild(option);
       });
       const lastIndex = localStorage.getItem("lastChannelIndex");
@@ -171,11 +194,26 @@
     }
 
     function changeChannel() {
-      const selectedIndex = document.getElementById('channelSelect').value;
-      const channel = channels[selectedIndex];
+      const index = document.getElementById('channelSelect').value;
+      const channel = channels[index];
       if (!channel) return;
-      localStorage.setItem("lastChannelIndex", selectedIndex);
-      document.getElementById('channelInfo').textContent = `La chaîne actuellement diffusée est :: ${channel.name}`;
+
+      localStorage.setItem("lastChannelIndex", index);
+      document.getElementById('channelInfo').textContent = `🎬 Chaîne : ${channel.name} (${channel.quality})`;
+
+      // Speed check based on quality
+      if (userSpeedMbps && qualitySpeeds[channel.quality]) {
+        const needed = qualitySpeeds[channel.quality];
+        if (userSpeedMbps < needed) {
+          speedWarning.textContent = `⚠️ Connexion trop lente pour cette chaîne (Besoin: ${needed} Mbps)`;
+        } else {
+          speedWarning.textContent = `✅ Connexion suffisante pour cette chaîne`;
+        }
+      } else {
+        speedWarning.textContent = '';
+      }
+
+      // Load video
       if (hls) hls.destroy();
       if (Hls.isSupported()) {
         hls = new Hls();
@@ -186,12 +224,8 @@
         video.src = channel.url;
         video.addEventListener('loadedmetadata', () => video.play());
       } else {
-        alert("HLS not supported in this browser.");
+        alert("HLS non pris en charge.");
       }
-    }
-
-    function openFullscreenTab() {
-      window.open("https://yourname.github.io/rubis-player", "_blank");
     }
   </script>
 </body>
